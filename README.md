@@ -74,8 +74,8 @@ The following pre-trained checkpoints are required before training:
 
 | Checkpoint | Description | Size | Source |
 |-----------|-------------|------|--------|
-| **Prismatic VLM Base** | Qwen2.5-0.5B + DINOSigLIP-224px backbone | ~3 GB | TODO |
-| **UniVLA LAM** | Latent Action Model (Stage-2 VQ encoder) | ~200 MB | [UniVLA](https://huggingface.co/PLM2526/UniVLA) |
+| **Prismatic VLM Base** | Qwen2.5-0.5B + DINOSigLIP-224px backbone | ~3 GB | [Download](https://huggingface.co/Stanford-ILIAD/prism-qwen25-extra-dinosiglip-224px-0_5b/tree/main) |
+| **UniVLA LAM** | Latent Action Model (Stage-2 VQ encoder) | ~200 MB | [Download](https://huggingface.co/qwbu/univla-latent-action-model/tree/main) |
 
 ```bash
 mkdir -p checkpoints/univla-latent-action-model
