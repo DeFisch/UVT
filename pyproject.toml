@@ -21,8 +21,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -31,21 +29,26 @@ dependencies = [
     "accelerate>=0.25.0",
     "draccus==0.8.0",
     "einops",
-    # "flash_attn==2.5.5",      # Here for documentation -- install *AFTER* editable install (follow README)
     "huggingface_hub",
     "json-numpy",
     "jsonlines",
     "matplotlib",
+    "opencv-python",
     "peft==0.11.1",
+    "pillow",
     "protobuf",
+    "lightning",
     "rich",
+    "rotary-embedding-torch",
+    "scipy",
     "sentencepiece==0.1.99",
     "timm==0.9.10",
     "tokenizers==0.19.1",
     "torch>=2.2.0",
     "torchvision>=0.17.0",
     "torchaudio>=2.2.0",
-    "transformers @ git+https://github.com/moojink/transformers-openvla-oft.git",  # IMPORTANT: Use this fork for bidirectional attn (for parallel decoding)
+    "tqdm",
+    "transformers @ git+https://github.com/moojink/transformers-openvla-oft.git",
     "wandb",
     "tensorflow==2.15.0",
     "tensorflow_datasets==4.9.3",
@@ -55,7 +58,6 @@ dependencies = [
     "imageio",
     "uvicorn",
     "fastapi",
-    "json-numpy",
 ]
 
 [project.optional-dependencies]
@@ -65,10 +67,6 @@ dev = [
     "ipython",
     "pre-commit",
     "ruff>=0.2.2",
-]
-sagemaker = [
-    "boto3",
-    "sagemaker"
 ]
 
 [project.urls]

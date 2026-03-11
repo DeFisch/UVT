@@ -3,7 +3,6 @@ from typing import Callable, Dict, Iterable, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-import piq
 import torch
 import wandb
 from PIL import Image

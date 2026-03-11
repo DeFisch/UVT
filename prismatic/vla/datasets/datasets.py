@@ -141,8 +141,28 @@ class RLDSBatchTransform:
             return_dict["proprio"] = proprio
 
         return return_dict
-    
-    
+
+
+@dataclass
+class RLDSBatchTransformVideo:
+    image_transform: ImageTransform
+
+    def __call__(self, rlds_batch: Dict[str, Any]) -> Dict[str, Any]:
+        """Converts a RLDS batch to the format expected by the OpenVLA collator/models."""
+        dataset_name, action = rlds_batch["dataset_name"], np.array(rlds_batch["action"])
+
+        lang = rlds_batch["task"]["language_instruction"].decode().lower()
+
+        img = Image.fromarray(rlds_batch["observation"]["image_primary"][0])
+        initial_pixel_values = self.image_transform(img)
+
+        target_frame_index = -1
+        img_k = Image.fromarray(rlds_batch["observation"]["image_primary"][target_frame_index])
+        target_pixel_values = self.image_transform(img_k)
+
+        return dict(initial_pixel_values=initial_pixel_values, target_pixel_values=target_pixel_values,
+                    task_instruction=lang, action=action, dataset_name=dataset_name)
+
 
 class RLDSDataset(IterableDataset):
     def __init__(

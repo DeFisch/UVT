@@ -50,19 +50,15 @@ pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 --index-url https
 # CUDA 12.8+ (Blackwell GPUs):
 # pip install torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu128
 
-# 3. Clone and install
+# 3. Clone and install (all dependencies resolved via pyproject.toml)
 git clone https://github.com/YOUR_USERNAME/unified-visuomotor-targets.git
 cd unified-visuomotor-targets
-pip install -r requirements.txt
 pip install -e .
 
-# 4. Install packages that require manual installation
-pip install dlimp@git+https://github.com/moojink/dlimp_openvla
-pip install flash-attn==2.5.5 --no-build-isolation  # optional but recommended
-# If flash-attn fails: pip cache remove flash_attn && retry
-
-# 5. (Optional) Install LIBERO for evaluation
-pip install robosuite mujoco
+# 4. (Optional) Install LIBERO for simulation evaluation
+pip install robosuite==1.4.1 mujoco bddl easydict cloudpickle gym==0.26.2
+git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git
+export PYTHONPATH="$(pwd)/LIBERO:$PYTHONPATH"
 ```
 
 **Verify installation:**
@@ -133,7 +129,25 @@ Your data must be in [RLDS format](https://github.com/google-research/rlds) (TFR
 - `action`: action vectors `(action_dim,)` float32
 - `language_instruction`: task description string
 
-Register your dataset in the OXE config:
+**LIBERO datasets:** We use the modified LIBERO RLDS datasets from [OpenVLA](https://huggingface.co/datasets/openvla/modified_libero_rlds). Download with:
+```bash
+# Requires git-lfs: https://git-lfs.com
+git clone git@hf.co:datasets/openvla/modified_libero_rlds
+
+# Directory structure after download:
+# modified_libero_rlds/
+# ├── libero_spatial_no_noops/
+# ├── libero_object_no_noops/
+# ├── libero_goal_no_noops/
+# └── libero_10_no_noops/
+
+# Then set DATA_ROOT to point to this directory:
+export DATA_ROOT=modified_libero_rlds
+```
+
+The LIBERO dataset configs (`libero_spatial_no_noops`, `libero_object_no_noops`, `libero_goal_no_noops`, `libero_10_no_noops`) are already registered in `prismatic/vla/datasets/rlds/oxe/configs.py`.
+
+**Custom datasets:** Register your dataset in the OXE config:
 1. Add an entry to `prismatic/vla/datasets/rlds/oxe/configs.py` with your dataset's image/state/action keys
 2. Add a transform function to `prismatic/vla/datasets/rlds/oxe/transforms.py`
 3. Add platform constants to `prismatic/vla/constants.py` (action dim, proprio dim, normalization type, chunk size)
@@ -233,26 +247,37 @@ python scripts/compute_u_for_subset.py \
 
 ### Step 5: Train VLA with u_t Head
 
+**LIBERO example** (libero_spatial_no_noops, single GPU):
 ```bash
+export DATASET=libero_spatial_no_noops
+export DATA_ROOT=modified_libero_rlds
+export OUTPUT_DIR=precomputed_lam_indices
+
 CUDA_VISIBLE_DEVICES=0 torchrun --standalone --nnodes 1 --nproc-per-node 1 \
     vla-scripts/finetune.py \
     --vlm_path checkpoints/prism-qwen25-extra-dinosiglip-224px-0_5b \
     --config_file_path pretrained_models/configs \
     --data_root_dir $DATA_ROOT \
     --dataset_name $DATASET \
-    --run_root_dir runs_${DATASET} \
+    --run_root_dir runs_ut \
+    --use_film False \
+    --num_images_in_input 2 \
+    --use_proprio True \
     --use_lora True \
     --lora_rank 64 \
-    --use_proprio True \
+    --use_fz False \
     --use_minivlm True \
     --image_aug True \
-    --num_images_in_input 3 \
-    --batch_size 4 \
-    --grad_accumulation_steps 4 \
-    --learning_rate 1e-4 \
-    --max_steps 10000 \
+    --shuffle_buffer_size 52000 \
+    --num_steps_before_decay 200000 \
+    --max_steps 100000 \
     --save_freq 1000 \
     --save_latest_checkpoint_only False \
+    --merge_lora_during_training True \
+    --batch_size 8 \
+    --grad_accumulation_steps 2 \
+    --learning_rate 1e-4 \
+    --use_pro_version True \
     --use_l1_regression False \
     --use_ut_head True \
     --ut_latent_dim 32 \
@@ -261,7 +286,7 @@ CUDA_VISIBLE_DEVICES=0 torchrun --standalone --nnodes 1 --nproc-per-node 1 \
     --ut_decode_loss_weight 1.0 \
     --ut_decoder_weights_path $OUTPUT_DIR/$DATASET/decoder_weights.pt \
     --lam_indices_path $OUTPUT_DIR \
-    --wandb_project "VLA-$DATASET" \
+    --wandb_project "VLA-UT" \
     --wandb_entity YOUR_WANDB_ENTITY
 ```
 
@@ -270,17 +295,23 @@ CUDA_VISIBLE_DEVICES=0 torchrun --standalone --nnodes 1 --nproc-per-node 1 \
 | 10,000 | 1x A100 (80GB) | ~4-5 hours |
 | 10,000 | 1x B200 (96GB) | ~5 hours |
 | 10,000 | 1x RTX 4090 (24GB) | ~8-10 hours (reduce batch_size to 2) |
-| 30,000 | 1x A100 (80GB) | ~13-15 hours |
+| 100,000 | 1x A100 (80GB) | ~40-50 hours |
 
-**Multi-task parallel training:**
+**Multi-task parallel training** (one dataset per GPU):
 ```bash
-CUDA_VISIBLE_DEVICES=0 torchrun ... --dataset_name task_a &
-CUDA_VISIBLE_DEVICES=1 torchrun ... --dataset_name task_b &
-CUDA_VISIBLE_DEVICES=2 torchrun ... --dataset_name task_c &
+for i in 0 1 2; do
+    DATASETS=(libero_object_no_noops libero_goal_no_noops libero_10_no_noops)
+    CUDA_VISIBLE_DEVICES=$i torchrun --standalone --nnodes 1 --nproc-per-node 1 \
+        --master_port $((29500 + i)) \
+        vla-scripts/finetune.py \
+        ... \
+        --dataset_name ${DATASETS[$i]} &
+    sleep 30  # stagger launches
+done
 wait
 ```
 
-**Outputs:** `runs_<dataset>/<run_name>--<step>_chkpt/` containing `model.safetensors`, `lora_adapter/`, `action_head`, `action_decoder`, `proprio_projector`, `config.json`.
+**Outputs:** `runs_ut/<run_name>--<step>_chkpt/` containing `lora_adapter/`, `action_head--*_checkpoint.pt`, `action_decoder--*_checkpoint.pt`, `proprio_projector--*_checkpoint.pt`, `dataset_statistics.json`.
 
 ---
 
@@ -288,12 +319,31 @@ wait
 
 ### LIBERO Benchmark
 
+Requires LIBERO installed (see Installation step 4).
+
 ```bash
-python experiments/robot/libero/run_libero_eval.py \
-    --model_path runs_my_task/<run_name>--10000_chkpt \
-    --task_suite libero_spatial \
-    --num_episodes 20
+export PYTHONPATH="$(pwd)/LIBERO:$PYTHONPATH"
+export MUJOCO_GL=egl  # headless rendering
+
+CUDA_VISIBLE_DEVICES=0 python experiments/robot/libero/run_libero_eval.py \
+    --pretrained_checkpoint runs_ut/<run_name>--10000_chkpt \
+    --task_suite_name libero_spatial \
+    --model_family openvla \
+    --use_l1_regression False \
+    --use_ut_head True \
+    --use_minivlm True \
+    --use_film False \
+    --num_images_in_input 2 \
+    --use_proprio True \
+    --center_crop True \
+    --num_open_loop_steps 8 \
+    --use_pro_version True \
+    --save_version vla-adapter \
+    --num_trials_per_task 20 \
+    --local_log_dir experiments/logs
 ```
+
+Available `--task_suite_name` options: `libero_spatial`, `libero_object`, `libero_goal`, `libero_10`.
 
 ---
 
@@ -328,8 +378,7 @@ Steps 1-4 together take under 1 hour. Step 5 dominates wall-clock time.
 ```
 unified-visuomotor-targets/
 ├── README.md
-├── pyproject.toml
-├── requirements.txt                        # pip freeze from working env (pinned versions)
+├── pyproject.toml                          # All dependencies (pip install -e .)
 │
 ├── scripts/
 │   ├── precompute_lam_indices.py           # Step 1: LAM discrete code precomputation
